@@ -201,14 +201,7 @@ namespace Piston.Core
 
             try
             {
-                var initObj = new
-                {
-                    type = "init",
-                    language = language,
-                    version = version,
-                    files = files,
-                    stdin = string.Empty
-                };
+                var initObj = new { type = "init", language, version, files, stdin = string.Empty };
 
                 var initJson = JsonConvert.SerializeObject(initObj);
                 var initBytes = Encoding.UTF8.GetBytes(initJson);
@@ -295,7 +288,5 @@ namespace Piston.Core
                 try { ws.Dispose(); } catch { }
             }
         }
-
-
     }
 }
