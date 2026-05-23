@@ -1,0 +1,9 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
+int main() {
+
+printf("with stdio\n");
+
+return 0;
+}

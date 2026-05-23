@@ -1,0 +1,11 @@
+using System.Text;
+using System;
+class Program {
+static void Main(string[] args) {
+
+var sb = new StringBuilder();
+sb.Append("abc");
+Console.WriteLine(sb.ToString());
+
+}
+}

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MyApp/MyApp.csproj" />
+  <Project Path="Piston.Core.Tests/Piston.Core.Tests.csproj" />
+  <Project Path="Piston.Core/Piston.Core.csproj" />
+</Solution>
