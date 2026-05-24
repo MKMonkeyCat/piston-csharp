@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -7,7 +9,23 @@ namespace Piston.Core
 {
   public static class PistonUtils
   {
-    public static List<PistonFile> PrepareFilesForSubmission(
+    private class LangConfig
+    {
+      public string DefaultName { get; set; }
+      public HashSet<string> ValidExtensions { get; set; }
+    }
+
+    private static readonly Dictionary<string, HashSet<string>> NeedCompilationLanguageMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "c",          new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".c", ".h" } },
+        { "cpp",        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh" } },
+        { "java",       new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".java" } },
+        { "csharp",     new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs" } },
+        // { "rust",       new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".rs" } },
+        // { "php",        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".php" } }
+    };
+
+    public static PistonFile PrepareFileForSubmission(
       string language,
       string sourceCode,
       string filename = null,
@@ -25,17 +43,16 @@ namespace Piston.Core
       if (language == "python") return CreateFile(filename ?? "main.py", sourceCode);
       if (language == "javascript") return CreateFile(filename ?? "main.js", sourceCode);
 
-      return CreateFile(filename ?? "main.txt", sourceCode);
+      return CreateFile(filename, sourceCode);
     }
 
     public static string NormalizeLanguage(string lang)
     {
       if (lang == "clang") return "c";
       if (lang == "c++") return "cpp";
-      if (lang == "c#") return "csharp";
+      if (lang == "c#" || lang == "cs") return "csharp";
       if (lang == "py") return "python";
-      if (lang == "js") return "javascript";
-      if (lang == "node") return "javascript";
+      if (lang == "js" || lang == "node") return "javascript";
 
       return lang;
     }
@@ -52,7 +69,23 @@ namespace Piston.Core
       return "main.txt";
     }
 
-    private static List<PistonFile> Build(string language, string code, string filename, bool? autoWrap = null)
+    public static bool ShouldUseBase64Encoding(string language, string filename)
+    {
+      if (string.IsNullOrWhiteSpace(language) || string.IsNullOrWhiteSpace(filename)) return false;
+
+      language = NormalizeLanguage(language.Trim().ToLowerInvariant());
+
+      if (NeedCompilationLanguageMap.TryGetValue(language, out var extensions))
+      {
+        string fileExt = Path.GetExtension(filename).ToLowerInvariant();
+        // If the file extension is not in the allowed list for the language, use Base64 encoding
+        return !extensions.Contains(fileExt);
+      }
+
+      return false;
+    }
+
+    private static PistonFile Build(string language, string code, string filename, bool? autoWrap = null)
     {
       // Auto-wrap if no main method is detected,
       // unless the user has explicitly opted out via autoWrap=false or a WRAP: OFF directive.
@@ -90,89 +123,76 @@ namespace Piston.Core
       return null;
     }
 
-    private static List<PistonFile> CreateFile(string filename, string content)
+    private static PistonFile CreateFile(string filename, string content)
     {
-      List<PistonFile> list = new List<PistonFile>();
-
       PistonFile file = new PistonFile
       {
         Name = string.IsNullOrWhiteSpace(filename) ? null : filename,
         Content = content ?? ""
       };
 
-      list.Add(file);
-      return list;
+      return file;
     }
 
-    private static string Wrap(string language, string preamble, string body)
+    public static string Wrap(string language, string preamble, string body)
     {
-      StringBuilder sb = new StringBuilder();
+      preamble = string.IsNullOrWhiteSpace(preamble) ? "" : preamble.TrimEnd() + "\n";
 
-      if (!string.IsNullOrWhiteSpace(preamble)) sb.AppendLine(preamble.TrimEnd());
-
-      if (language == "c") return WrapC(sb.ToString(), body);
-      if (language == "cpp") return WrapCpp(sb.ToString(), body);
-      if (language == "java") return WrapJava(sb.ToString(), body);
-      if (language == "csharp") return WrapCSharp(sb.ToString(), body);
+      if (language == "c") return WrapC(preamble, body);
+      if (language == "cpp") return WrapCpp(preamble, body);
+      if (language == "java") return WrapJava(preamble, body);
+      if (language == "csharp") return WrapCSharp(preamble, body);
 
       return body;
     }
 
     private static string WrapC(string preamble, string body)
     {
-      StringBuilder sb = new StringBuilder();
-
-      sb.Append(preamble);
-      sb.AppendLine("#include <stdio.h>");
-      sb.AppendLine("int main() {");
-      sb.AppendLine(body);
-      sb.AppendLine("return 0;");
-      sb.AppendLine("}");
-      return sb.ToString();
+      return string.Concat(preamble,
+        "#include <stdio.h>\n",
+        "int main() {\n",
+        body,
+        "\nreturn 0;\n",
+        "}\n"
+      );
     }
 
     private static string WrapCpp(string preamble, string body)
     {
-      StringBuilder sb = new StringBuilder();
-
-      sb.Append(preamble);
-      sb.AppendLine("#include <iostream>");
-      sb.AppendLine("using namespace std;");
-      sb.AppendLine("int main() {");
-      sb.AppendLine(body);
-      sb.AppendLine("return 0;");
-      sb.AppendLine("}");
-      return sb.ToString();
+      return string.Concat(preamble,
+        "#include <iostream>\n",
+        "using namespace std;\n",
+        "int main() {\n",
+        body,
+        "\nreturn 0;\n",
+        "}\n"
+      );
     }
 
     private static string WrapJava(string preamble, string body)
     {
-      StringBuilder sb = new StringBuilder();
-
-      sb.Append(preamble);
-      sb.AppendLine("public class Main {");
-      sb.AppendLine("public static void main(String[] args) {");
-      sb.AppendLine(body);
-      sb.AppendLine("}");
-      sb.AppendLine("}");
-      return sb.ToString();
+      return string.Concat(preamble,
+        "public class Main {\n",
+        "public static void main(String[] args) {\n",
+        body,
+        "\n}\n",
+        "}\n"
+      );
     }
 
     private static string WrapCSharp(string preamble, string body)
     {
-      StringBuilder sb = new StringBuilder();
-
-      sb.Append(preamble);
-      sb.AppendLine("using System;");
-      sb.AppendLine("class Program {");
-      sb.AppendLine("static void Main(string[] args) {");
-      sb.AppendLine(body);
-      sb.AppendLine("}");
-      sb.AppendLine("}");
-      return sb.ToString();
+      return string.Concat(preamble,
+        "using System;\n",
+        "class Program {\n",
+        "static void Main(string[] args) {\n",
+        body,
+        "\n}\n",
+        "}\n"
+      );
     }
 
-    private static string ExtractPreamble(string code, string language)
+    public static string ExtractPreamble(string code, string language)
     {
       StringBuilder sb = new StringBuilder();
 
@@ -187,7 +207,7 @@ namespace Piston.Core
       return sb.ToString();
     }
 
-    private static string RemovePreamble(string code, string language)
+    public static string RemovePreamble(string code, string language)
     {
       List<string> result = new List<string>();
 

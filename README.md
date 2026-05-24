@@ -11,28 +11,107 @@
 
 ## 倉庫主要結構
 
-- `MyApp/` — 範例控制台程式（可執行範例）
 - `Piston.Core/` — 核心函式庫實作
 - `Piston.Core.Tests/` — 單元測試
 - `LICENSE` — 授權說明
 
+## 自動補全支援以下語言：
+
+- C
+- C++
+- Java
+- C#
+
+Python, JavaScript 等語言無須前置包裝，直接傳送原始程式碼即可。
+若有其他語言需求，歡迎提出 issue 或 pull request。
+
+允許使用 `ON` 或 `OFF` 來控制是否啟用包裝功能，具體使用方式如下：
+註解 > 函數參數 > 預設值(true)
+
+```
+// PISTON-WRAP: ON
+```
+
+```
+/* PISTON-WRAP: ON */
+```
+
+```
+# PISTON-WRAP: ON
+```
+
+<details>
+<summary>（註：以下為示範程式碼片段，實際使用請參考專案原始碼或查閱 Piston.Core.Tests/TestData）</summary>
+
+### C
+
+#### IN
+
+```c
+printf("Hello, World!\n");
+```
+
+#### OUT
+
+```c
+#include <stdio.h>
+int main() {
+printf("Hello, World!\n");
+return 0;
+}
+```
+
+### C++
+
+#### IN
+
+```cpp
+cout << "Hello, World!" << endl;
+```
+
+#### OUT
+
+```cpp
+#include <iostream>
+using namespace std;
+int main() {
+cout << "Hello, World!" << endl;
+return 0;
+}
+```
+
+### Java
+
+#### IN
+
+```java
+System.out.println("Hello, World!");
+```
+
+#### OUT
+
+```java
+public class Main {
+public static void main(String[] args) {
+System.out.println("Hello, World!");
+}
+}
+```
+
+</details>
+
 ## 先決條件
 
-- 已安裝 .NET SDK（建議使用 .NET 6.0 或更新版本）。
+- `Piston.Core` 需要 .NET Standard 2.0 或更高版本 (為了兼容性，害我寫的好痛苦...)
+- `Piston.Core.Tests` 需要 .NET 10.0 SDK 或更高版本
 
 ## 建置與測試
 
 在倉庫根目錄執行：
 
 ```bash
-dotnet build EngineerMan.Piston.slnx
+dotnet build Piston.Csharp.slnx
 dotnet test
-```
-
-執行範例應用：
-
-```bash
-dotnet run --project MyApp
 ```
 
 單獨執行測試專案：

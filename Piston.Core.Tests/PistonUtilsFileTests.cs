@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Piston.Core.Models;
 using Xunit;
 
 namespace Piston.Core.Tests
@@ -34,31 +35,46 @@ namespace Piston.Core.Tests
       var content = File.ReadAllText(filePath);
       var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
 
-      var files = PistonUtils.PrepareFilesForSubmission(ext, content, Path.GetFileName(filePath));
-      Assert.NotNull(files);
-      Assert.NotEmpty(files);
+      var file = PistonUtils.PrepareFileForSubmission(ext, content, Path.GetFileName(filePath));
+      Assert.NotNull(file);
 
       var expectedPath = filePath + ".expected";
       if (File.Exists(expectedPath))
       {
-        var actual = files[0].Content.Replace("\r\n", "\n");
+        var actual = file.Content.Replace("\r\n", "\n");
         var expected = File.ReadAllText(expectedPath).Replace("\r\n", "\n");
-
-        var result = await _client.ExecuteAsync(ext, "*", content);
-        if (result.Run.Code != 0)
-        {
-          Console.WriteLine($"Execution failed for {filePath} with code {result.Run.Code} - Stderr: {result.Run.Stderr}");
-        }
 
         Assert.Equal(expected, actual);
       }
-      else
+      else Assert.NotNull(file.Content);
+    }
+
+    [Fact]
+    public async Task PrepareFilesForSubmission_AllFiles_WithRun_Parallel()
+    {
+      var baseDir = Path.Combine(AppContext.BaseDirectory, "TestData");
+      var filesToTest = Directory.EnumerateFiles(baseDir, "*", SearchOption.AllDirectories);
+
+      var options = new ParallelOptions { MaxDegreeOfParallelism = 8 };
+
+      await Parallel.ForEachAsync(filesToTest, options, async (input, token) =>
       {
-        foreach (var f in files)
-        {
-          Assert.NotNull(f.Content);
-        }
-      }
+        var content = await File.ReadAllTextAsync(input, token);
+        var basename = Path.GetFileNameWithoutExtension(input);
+
+        var ext = Path.GetExtension(basename.Contains('.') ? basename : input).TrimStart('.').ToLowerInvariant();
+
+        List<PistonFile> files = [
+          PistonUtils.PrepareFileForSubmission(ext, content, null),
+          PistonUtils.PrepareFileForSubmission("txt", "A text file", content, null),
+        ];
+
+        var result = await _client.ExecuteAsync(ext, "*", files, cancellationToken: token);
+
+        Assert.NotNull(result);
+        Assert.NotNull(result.Run);
+        Assert.True(result.Run.Code == 0 || result.Run.Code == 1 || result.Compile?.Code == 0 || result.Compile?.Code == 1);
+      });
     }
   }
 }
