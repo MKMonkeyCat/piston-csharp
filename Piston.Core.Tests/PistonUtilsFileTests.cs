@@ -67,18 +67,20 @@ namespace Piston.Core.Tests
 
                 List<PistonFile> files = [
                     PistonUtils.PrepareFileForSubmission(ext, content),
-                    PistonUtils.PrepareFileForSubmission("txt", "A text file"),
+                    new PistonFile { Name = "test.txt", Content = content }
                 ];
 
                 var result = await _client.ExecuteAsync(ext, "*", files, cancellationToken: token);
 
+                var errorDetail = $"File: {input}\nLanguage: {ext}\nStdout: {result?.Run?.Stdout}\nStderr: {result?.Run?.Stderr}\nCompileStderr: {result?.Compile?.Stderr}";
+
                 Assert.NotNull(result);
                 Assert.NotNull(result.Run);
-                Assert.True(result.Run.Code == 0 || result.Run.Code == 1 || result.Compile?.Code == 0 || result.Compile?.Code == 1);
+                Assert.True(result.Run.Code == 0 || result.Run.Code == 1 || result.Compile?.Code == 0 || result.Compile?.Code == 1, errorDetail);
             });
         }
 
-        private static readonly string[] InvalidFilenames =
+        private static readonly HashSet<string> InvalidFilenames =
         [
             // Path Traversal
             "t/../t.txt",

@@ -43,8 +43,8 @@ namespace Piston.Core
             {
                 return Build(language, sourceCode, filename, autoWrap);
             }
-            if (language == "python") return CreateFile(filename ?? "main.py", sourceCode);
-            if (language == "javascript") return CreateFile(filename ?? "main.js", sourceCode);
+            if (language == "python") return CreateFile(filename, sourceCode);
+            if (language == "javascript") return CreateFile(filename, sourceCode);
 
             return CreateFile(filename, sourceCode);
         }
@@ -58,18 +58,6 @@ namespace Piston.Core
             if (lang == "js" || lang == "node") return "javascript";
 
             return lang;
-        }
-
-        public static string DefaultFilename(string language)
-        {
-            if (language == "c") return "main.c";
-            if (language == "cpp") return "main.cpp";
-            if (language == "java") return "Main.java";
-            if (language == "csharp") return "Program.cs";
-            if (language == "python") return "main.py";
-            if (language == "javascript") return "main.js";
-
-            return "main.txt";
         }
 
         public static bool ShouldUseBase64Encoding(string language, string filename)
@@ -90,7 +78,9 @@ namespace Piston.Core
 
         public static string ValidateFilename(string filename)
         {
-            if (string.IsNullOrWhiteSpace(filename)) throw new ArgumentException("filename empty");
+            if (filename == null) return null;
+
+            // if (string.IsNullOrWhiteSpace(filename)) throw new ArgumentException("filename empty");
             if (filename.Length > 128) throw new ArgumentException("filename too long");
             if (filename.Any(char.IsControl)) throw new ArgumentException("control characters not allowed");
 
@@ -121,7 +111,7 @@ namespace Piston.Core
                 code = Wrap(language, preamble, body);
             }
 
-            return CreateFile(filename ?? DefaultFilename(language), code);
+            return CreateFile(filename, code);
         }
 
         private static bool? GetTopWrapDirective(string code, string language)
