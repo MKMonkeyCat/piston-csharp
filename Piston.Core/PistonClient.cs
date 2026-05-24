@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -132,25 +131,53 @@ namespace Piston.Core
         public async Task<PistonResult> ExecuteAsync(string language, string version, string sourceCode, string stdin = "", CancellationToken cancellationToken = default)
         {
             var file = PistonUtils.PrepareFileForSubmission(language, sourceCode, null);
-            return await ExecuteAsync(language, version, new List<PistonFile> { file }, stdin, cancellationToken).ConfigureAwait(false);
+            return await ExecuteAsync(language, version, new List<PistonFile> { file }, stdin, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<PistonResult> ExecuteAsync(string language, string version, List<PistonFile> files, string stdin = "", CancellationToken cancellationToken = default)
+        public async Task<PistonResult> ExecuteAsync(string language, string version, string sourceCode, PistonExecuteOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            var file = PistonUtils.PrepareFileForSubmission(language, sourceCode, null);
+            return await ExecuteAsync(language, version, new List<PistonFile> { file }, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PistonResult> ExecuteAsync(string language, string version, List<PistonFile> files, PistonExecuteOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            string stdinValue = string.Empty;
+            if (options != null)
+            {
+                if (options.StdinLines != null && options.StdinLines.Count > 0) stdinValue = string.Join("\n", options.StdinLines);
+                else stdinValue = options.Stdin ?? string.Empty;
+            }
+
+            return await ExecuteAsync(language, version, files,
+                stdin: stdinValue,
+                args: options?.Args,
+                runTimeout: options?.RunTimeout,
+                compileTimeout: options?.CompileTimeout,
+                runMemoryLimit: options?.RunMemoryLimit,
+                compileMemoryLimit: options?.CompileMemoryLimit,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PistonResult> ExecuteAsync(string language, string version, List<PistonFile> files, string stdin = "", List<string> args = null,
+            int? runTimeout = null, int? compileTimeout = null, int? runMemoryLimit = null, int? compileMemoryLimit = null,
+            CancellationToken cancellationToken = default)
         {
             bool allBase64 = true;
             List<PistonFile> processedFiles = files.Select(f =>
                 {
-                    bool useBase64 = PistonUtils.ShouldUseBase64Encoding(language, f.Name);
+                    string validatedName = PistonUtils.ValidateFilename(f.Name);
+                    bool useBase64 = PistonUtils.ShouldUseBase64Encoding(language, validatedName);
 
                     if (!useBase64 && allBase64) allBase64 = false;
 
                     return new PistonFile
                     {
-                        Name = f.Name,
+                        Name = validatedName,
                         Encoding = useBase64 ? "base64" : "utf8",
-                        Content = useBase64
-                            ? Convert.ToBase64String(Encoding.UTF8.GetBytes(f.Content ?? string.Empty))
-                            : f.Content
+                        Content = useBase64 ? Convert.ToBase64String(Encoding.UTF8.GetBytes(f.Content ?? string.Empty)) : f.Content
                     };
                 }).ToList();
 
@@ -164,7 +191,12 @@ namespace Piston.Core
                 Language = language,
                 Version = version,
                 Files = processedFiles,
-                Stdin = stdin
+                Stdin = stdin,
+                Args = args,
+                RunTimeout = runTimeout,
+                CompileTimeout = compileTimeout,
+                RunMemoryLimit = runMemoryLimit,
+                CompileMemoryLimit = compileMemoryLimit
             };
 
             string jsonPayload = JsonConvert.SerializeObject(requestBody);
@@ -174,92 +206,6 @@ namespace Piston.Core
                 string jsonResponse = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 return JsonConvert.DeserializeObject<PistonResult>(jsonResponse);
             }
-        }
-
-        public async Task<PistonResult> ExecuteStreamingAsync(
-            string language,
-            string version,
-            List<PistonFile> files,
-            Action<string> onStdout = null,
-            Action<string> onStderr = null,
-            Action<string> onStage = null,
-            CancellationToken cancellationToken = default)
-        {
-            using (var ws = new ClientWebSocket())
-            {
-                var builder = new UriBuilder(_httpClient.BaseAddress)
-                {
-                    Scheme = _httpClient.BaseAddress.Scheme == "https" ? "wss" : "ws"
-                };
-                builder.Path = builder.Path.TrimEnd('/') + "/connect";
-
-                await ws.ConnectAsync(builder.Uri, cancellationToken).ConfigureAwait(false);
-
-                // Send init message
-                var initObj = new { type = "init", language, version, files };
-                var initBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(initObj));
-                await ws.SendAsync(new ArraySegment<byte>(initBytes), WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
-
-                var buffer = new byte[4096];
-                var finalResult = new PistonResult();
-                var msgBuilder = new StringBuilder();
-
-                while (ws.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
-                {
-                    WebSocketReceiveResult result;
-                    msgBuilder.Clear();
-
-                    // Handle fragmented messages
-                    do
-                    {
-                        result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
-                        if (result.MessageType == WebSocketMessageType.Close) break;
-
-                        msgBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-                    } while (!result.EndOfMessage);
-
-                    if (result.MessageType == WebSocketMessageType.Close || msgBuilder.Length == 0) break;
-
-                    ParseWsMessage(msgBuilder.ToString(), finalResult, onStdout, onStderr, onStage);
-                }
-
-                return finalResult;
-            }
-        }
-
-        private void ParseWsMessage(string json, PistonResult result, Action<string> onStdout, Action<string> onStderr, Action<string> onStage)
-        {
-            try
-            {
-                var msg = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
-                if (msg == null || !msg.TryGetValue("type", out var typeObj)) return;
-
-                string type = typeObj.ToString();
-                switch (type)
-                {
-                    case "data":
-                        msg.TryGetValue("stream", out var stream);
-                        msg.TryGetValue("data", out var data);
-                        if (stream?.ToString() == "stdout") onStdout?.Invoke(data?.ToString());
-                        else if (stream?.ToString() == "stderr") onStderr?.Invoke(data?.ToString());
-                        break;
-
-                    case "stage":
-                        if (msg.TryGetValue("stage", out var s)) onStage?.Invoke(s.ToString());
-                        break;
-
-                    case "exit":
-                        var stageResult = new PistonStageResult();
-                        if (msg.TryGetValue("code", out var c)) stageResult.Code = Convert.ToInt32(c);
-                        if (msg.TryGetValue("output", out var o)) stageResult.Output = o.ToString();
-
-                        msg.TryGetValue("stage", out var stageName);
-                        if (stageName?.ToString() == "run") result.Run = stageResult;
-                        else result.Compile = stageResult;
-                        break;
-                }
-            }
-            catch { /* Silently drop malformed frames */ }
         }
 
         public void Dispose()
