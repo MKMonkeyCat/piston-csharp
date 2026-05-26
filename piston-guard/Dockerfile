@@ -1,12 +1,18 @@
-FROM ghcr.io/engineer-man/piston:latest
+FROM rust:1.93 AS builder
 
-COPY piston-guard.cpp /tmp/piston-guard.cpp
-RUN g++ -O3 /tmp/piston-guard.cpp -o /usr/local/bin/piston-guard && \
-  chmod 755 /usr/local/bin/piston-guard && \
-  rm /tmp/piston-guard.cpp
+RUN rustup target add x86_64-unknown-linux-musl
+
+WORKDIR /usr/src/piston-guard
+
+COPY . .
+RUN cargo build --release --target x86_64-unknown-linux-musl
+
+FROM ghcr.io/engineer-man/piston:latest
 
 RUN mv /usr/local/bin/isolate /usr/local/bin/isolate.real && \
   chmod +s /usr/local/bin/isolate.real
 
+COPY --from=builder /usr/src/piston-guard/target/x86_64-unknown-linux-musl/release/piston-guard /usr/local/bin/piston-guard
 COPY ./piston-guard.sh /usr/local/bin/isolate
-RUN chmod 755 /usr/local/bin/isolate
+
+RUN chmod 755 /usr/local/bin/piston-guard /usr/local/bin/isolate
