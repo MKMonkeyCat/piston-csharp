@@ -169,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let checker_grace = config.checker_grace.unwrap_or(DEFAULT_CHECKER_GRACE);
 
     // prevent user reading checker
-    // let _ = fs::remove_file(CHECKER_PATH);
+    let _ = fs::remove_file(CHECKER_PATH);
 
     // PRE
     if config.pre {
