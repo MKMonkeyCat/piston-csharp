@@ -44,7 +44,7 @@ pub fn parse_timeout(token: &str) -> Option<Duration> {
     if let Some(unit_index) = token.find(|c: char| c.is_alphabetic()) {
         let (num_str, unit_str) = token.split_at(unit_index);
         if let Ok(val) = num_str.parse::<f64>() {
-            return match unit_str {
+            return match unit_str.to_lowercase().as_str() {
                 "ms" => Some(Duration::from_secs_f64(val / 1000.0)),
                 "s" => Some(Duration::from_secs_f64(val)),
                 "m" | "min" => Some(Duration::from_secs_f64(val * 60.0)),
@@ -59,7 +59,10 @@ pub fn parse_timeout(token: &str) -> Option<Duration> {
 }
 
 pub fn extract_tag_value<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
-    let pos = text.find(tag)?;
+    let text_lower = text.to_lowercase();
+    let tag_lower = tag.to_lowercase();
+
+    let pos = text_lower.find(&tag_lower)?;
     let remain = &text[pos + tag.len()..];
     let end = remain.find(']')?;
 
@@ -68,8 +71,12 @@ pub fn extract_tag_value<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
 
 pub fn parse_checker_config(code: &str) -> CheckerConfig {
     let mut config = CheckerConfig::new();
+
+    if code.trim().is_empty() {
+        return config;
+    }
+
     let Some(first_line) = code.lines().next() else {
-        config.post = true;
         return config;
     };
 
@@ -89,10 +96,11 @@ pub fn parse_checker_config(code: &str) -> CheckerConfig {
     if normalized.contains("[post]") {
         config.post = true;
     }
-    if let Some(v) = extract_tag_value(&normalized, "[timeout=") {
+
+    if let Some(v) = extract_tag_value(trimmed, "[timeout=") {
         config.timeout = parse_timeout(v);
     }
-    if let Some(v) = extract_tag_value(&normalized, "[checker_grace=") {
+    if let Some(v) = extract_tag_value(trimmed, "[checker_grace=") {
         config.checker_grace = parse_timeout(v);
     }
 
